@@ -26,20 +26,31 @@ o que tem guardado na sessão**. É esse painel que ensina o ADK.
 
 **Precisa:** Python 3.11+ e uma chave de LLM.
 
+### Windows — dê dois cliques no `iniciar.bat`
+
+Ele faz tudo sozinho: cria o ambiente, instala as dependências, cria o banco fictício,
+sobe o chat e abre o navegador. Se faltar a chave do LLM, ele abre o `.env` no bloco de
+notas pra você preencher e continua de onde parou.
+
+Da segunda vez em diante abre em poucos segundos, porque só reinstala se o
+`requirements.txt` mudar. Para fechar, `Ctrl+C` na janela preta.
+
+### Linux/Mac — ou se preferir na mão
+
 ```bash
 # 1. instalar
 python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt      # Linux/Mac: .venv/bin/pip
+.venv/bin/pip install -r requirements.txt          # Windows: .venv\Scripts\pip
 
 # 2. configurar a chave
-copy .env.example .env                             # Linux/Mac: cp
+cp .env.example .env                               # Windows: copy
 #    abra o .env e preencha a chave do provider escolhido
 
 # 3. criar o banco fictício
-.venv\Scripts\python -m banco.seed
+.venv/bin/python -m banco.seed
 
 # 4. subir o chat
-.venv\Scripts\python -m app.server
+.venv/bin/python -m app.server
 ```
 
 Abra **http://localhost:8010**.
