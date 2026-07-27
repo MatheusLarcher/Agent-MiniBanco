@@ -1,0 +1,13 @@
+# Mini Banco com IA — Google ADK
+#
+# No Windows com Python 3.13, instale com:
+#   pip install --only-binary :all: -r requirements.txt
+# (sem isso o pip tenta compilar o litellm do zero e pede o compilador Rust)
+
+google-adk[db]==2.5.0     # o framework + DatabaseSessionService (sqlalchemy/aiosqlite)
+litellm==1.91.4           # ponte para OpenAI/DeepSeek/Anthropic/Ollama (opcional se usar Gemini)
+mcp==1.28.1               # servidor MCP de indicadores de mercado
+
+fastapi==0.140.6          # interface de chat
+uvicorn==0.51.0
+python-dotenv==1.2.2

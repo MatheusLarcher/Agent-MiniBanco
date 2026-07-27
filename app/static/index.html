@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Banco com IA — Google ADK</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --linha:#262d38; --txt:#e6edf3; --fraco:#8b949e;
+    --ok:#3fb950; --azul:#4493f8; --roxo:#bc8cff; --amarelo:#e3b341; --vermelho:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.55 system-ui,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column}
+  header{padding:12px 18px;border-bottom:1px solid var(--linha);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;letter-spacing:.3px}
+  header h1 span{color:var(--azul)}
+  select,button{background:var(--card);color:var(--txt);border:1px solid var(--linha);border-radius:7px;padding:7px 11px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--azul)}
+  .tag{font-size:12px;color:var(--fraco);border:1px solid var(--linha);border-radius:20px;padding:3px 10px}
+  main{flex:1;display:flex;min-height:0}
+  #chat{flex:1;display:flex;flex-direction:column;min-width:0}
+  #msgs{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:12px}
+  .m{max-width:78%;padding:10px 14px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}
+  .eu{align-self:flex-end;background:#1f6feb;color:#fff;border-bottom-right-radius:3px}
+  .bot{align-self:flex-start;background:var(--card);border:1px solid var(--linha);border-bottom-left-radius:3px}
+  .quem{font-size:11px;color:var(--roxo);margin-bottom:4px;text-transform:uppercase;letter-spacing:.6px}
+  .sistema{align-self:center;font-size:12px;color:var(--fraco);font-style:italic}
+  #barra{display:flex;gap:9px;padding:14px;border-top:1px solid var(--linha)}
+  #txt{flex:1;background:var(--card);border:1px solid var(--linha);border-radius:9px;padding:11px 13px;color:var(--txt);font:inherit;resize:none}
+  #txt:focus{outline:none;border-color:var(--azul)}
+  #lado{width:410px;border-left:1px solid var(--linha);overflow-y:auto;padding:14px;background:#0b0f14}
+  #lado h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--fraco);margin:18px 0 8px}
+  #lado h2:first-child{margin-top:0}
+  pre{background:var(--card);border:1px solid var(--linha);border-radius:8px;padding:10px;font-size:12px;margin:0;white-space:pre-wrap;word-break:break-word}
+  .ev{border-left:3px solid var(--linha);padding:6px 10px;margin-bottom:6px;background:var(--card);border-radius:0 7px 7px 0;font-size:12.5px}
+  .ev.transferencia{border-left-color:var(--roxo)}
+  .ev.tool_call{border-left-color:var(--azul)}
+  .ev.tool_result{border-left-color:var(--ok)}
+  .ev b{font-weight:600}
+  .ev code{color:var(--fraco);font-size:11.5px}
+  #confirma{background:#2d2210;border:1px solid var(--amarelo);border-radius:10px;padding:14px;margin:0 18px 10px;display:none}
+  #confirma p{margin:0 0 10px}
+  #confirma .op{font-size:12px;color:var(--amarelo);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+  #confirma .acoes{display:flex;gap:9px}
+  .sim{background:var(--ok);border-color:var(--ok);color:#07240f;font-weight:600}
+  .nao{background:transparent;border-color:var(--vermelho);color:var(--vermelho)}
+  .dica{font-size:12px;color:var(--fraco);padding:0 18px 8px}
+  .dica b{color:var(--azul);cursor:pointer;font-weight:400;border-bottom:1px dotted var(--azul)}
+  @media(max-width:900px){#lado{display:none}.m{max-width:92%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mini Banco <span>com IA</span></h1>
+  <select id="cliente"></select>
+  <button onclick="novaSessao()">Nova sessão</button>
+  <button onclick="encerrar()">Encerrar &amp; memorizar</button>
+  <span class="tag" id="tagModelo">—</span>
+  <span class="tag" id="tagSessao">—</span>
+</header>
+
+<main>
+  <div id="chat">
+    <div id="msgs"></div>
+    <div id="confirma">
+      <div class="op" id="cOp"></div>
+      <p id="cTexto"></p>
+      <div class="acoes">
+        <button class="sim" onclick="responder(true)">Confirmar</button>
+        <button class="nao" onclick="responder(false)">Cancelar</button>
+      </div>
+    </div>
+    <div class="dica">
+      Experimente:
+      <b onclick="sugerir(this)">qual meu saldo?</b> ·
+      <b onclick="sugerir(this)">no que gastei nos últimos 7 dias?</b> ·
+      <b onclick="sugerir(this)">simula 10 mil em 24x</b> ·
+      <b onclick="sugerir(this)">perdi meu cartão, bloqueia</b> ·
+      <b onclick="sugerir(this)">como estão minhas finanças?</b> ·
+      <b onclick="sugerir(this)">a taxa de voces é boa comparada à Selic?</b>
+    </div>
+    <div id="barra">
+      <textarea id="txt" rows="1" placeholder="Escreva sua mensagem..."></textarea>
+      <button onclick="enviar()" id="btEnviar">Enviar</button>
+    </div>
+  </div>
+
+  <aside id="lado">
+    <h2>O que o ADK fez (trilha)</h2>
+    <div id="trilha"><span class="sistema">nada ainda</span></div>
+    <h2>State da Session</h2>
+    <pre id="state">{}</pre>
+  </aside>
+</main>
+
+<script>
+let S = null, pendente = null;
+
+const $ = s => document.querySelector(s);
+const msgs = $('#msgs');
+
+function bolha(txt, classe, quem){
+  const d = document.createElement('div');
+  d.className = 'm ' + classe;
+  if (quem) d.innerHTML = `<div class="quem">${quem}</div>`;
+  d.appendChild(document.createTextNode(txt));
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+  return d;
+}
+function sistema(txt){
+  const d = document.createElement('div');
+  d.className = 'sistema'; d.textContent = txt;
+  msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+}
+function sugerir(el){ $('#txt').value = el.textContent.trim(); $('#txt').focus(); }
+
+async function carregarClientes(){
+  const r = await (await fetch('/api/clientes')).json();
+  if (r.erro){ sistema(r.erro); return; }
+  $('#tagModelo').textContent = 'modelo: ' + r.modelo;
+  $('#cliente').innerHTML = r.clientes.map(c =>
+    `<option value="${c.id}">${c.nome} — conta ${c.numero} — score ${c.score}</option>`).join('');
+  await novaSessao();
+}
+
+async function novaSessao(){
+  const r = await (await fetch('/api/sessao', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cliente_id: $('#cliente').value})})).json();
+  S = r;
+  msgs.innerHTML = '';
+  $('#trilha').innerHTML = '<span class="sistema">nada ainda</span>';
+  $('#state').textContent = JSON.stringify(r.state, null, 2);
+  $('#tagSessao').textContent = 'session: ' + r.session_id.slice(0, 8);
+  esconderConfirma();
+  sistema(`Sessão nova para ${r.nome} (conta ${r.conta}).`);
+}
+
+async function enviar(){
+  const t = $('#txt').value.trim();
+  if (!t || !S) return;
+  $('#txt').value = '';
+  bolha(t, 'eu');
+  await chamar('/api/mensagem', {user_id:S.user_id, session_id:S.session_id, texto:t});
+}
+
+async function responder(ok){
+  if (!pendente) return;
+  const p = pendente; esconderConfirma();
+  bolha(ok ? 'Confirmar' : 'Cancelar', 'eu');
+  await chamar('/api/confirmar', {user_id:S.user_id, session_id:S.session_id,
+    invocation_id:p.invocation_id, function_call_id:p.function_call_id, confirmado: ok});
+}
+
+async function chamar(url, body){
+  $('#btEnviar').disabled = true;
+  const carregando = bolha('…', 'bot', 'pensando');
+  try{
+    const r = await (await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)})).json();
+    carregando.remove();
+    if (r.texto) bolha(r.texto, 'bot', r.agente_final || 'agente');
+    pintarTrilha(r.trilha || []);
+    $('#state').textContent = JSON.stringify(r.state || {}, null, 2);
+    if (r.confirmacao_pendente) mostrarConfirma(r.confirmacao_pendente);
+  }catch(e){
+    carregando.remove(); sistema('Erro: ' + e);
+  }finally{ $('#btEnviar').disabled = false; $('#txt').focus(); }
+}
+
+function pintarTrilha(trilha){
+  const el = $('#trilha');
+  if (!trilha.length){ el.innerHTML = '<span class="sistema">nenhuma tool nesta resposta</span>'; return; }
+  el.innerHTML = trilha.map(t => {
+    if (t.tipo === 'transferencia')
+      return `<div class="ev transferencia">🔀 <b>${t.de}</b> delegou para <b>${t.para}</b></div>`;
+    if (t.tipo === 'tool_call')
+      return `<div class="ev tool_call">🔧 <b>${t.agente}</b> chamou <b>${t.tool}</b>
+              <code>${JSON.stringify(t.args)}</code></div>`;
+    return `<div class="ev tool_result">✅ <b>${t.tool}</b> devolveu
+            <code>${JSON.stringify(t.resultado).slice(0,320)}</code></div>`;
+  }).join('');
+}
+
+function mostrarConfirma(p){
+  pendente = p;
+  $('#cOp').textContent = 'confirmação necessária · ' + p.tool;
+  $('#cTexto').textContent = p.hint;
+  $('#confirma').style.display = 'block';
+}
+function esconderConfirma(){ pendente = null; $('#confirma').style.display = 'none'; }
+
+async function encerrar(){
+  if (!S) return;
+  const r = await (await fetch('/api/encerrar', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({user_id:S.user_id, session_id:S.session_id, texto:''})})).json();
+  sistema(r.ok ? `Conversa guardada na memória (${r.eventos_memorizados} eventos). Abra uma sessão nova e pergunte "o que conversamos antes?".`
+               : 'Não deu para memorizar: ' + r.erro);
+}
+
+$('#txt').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); enviar(); }
+});
+$('#cliente').addEventListener('change', novaSessao);
+carregarClientes();
+</script>
+</body>
+</html>
