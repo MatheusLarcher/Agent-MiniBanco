@@ -23,6 +23,23 @@
   .m{max-width:78%;padding:10px 14px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}
   .eu{align-self:flex-end;background:#1f6feb;color:#fff;border-bottom-right-radius:3px}
   .bot{align-self:flex-start;background:var(--card);border:1px solid var(--linha);border-bottom-left-radius:3px}
+  /* O LLM responde em Markdown: o .md é o conteúdo já convertido em HTML.
+     white-space:normal porque as quebras agora são <p>/<li>, não "\n" cru. */
+  .md{white-space:normal}
+  .md > *:first-child{margin-top:0}
+  .md > *:last-child{margin-bottom:0}
+  .md p{margin:0 0 8px}
+  .md strong{font-weight:650;color:#fff}
+  .md em{font-style:italic}
+  .md h4{font-size:14px;margin:12px 0 6px;color:#fff}
+  .md ul,.md ol{margin:6px 0 8px;padding-left:20px}
+  .md li{margin:2px 0}
+  .md code{background:#0d1117;border:1px solid var(--linha);border-radius:5px;
+           padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--azul)}
+  .md pre{margin:8px 0}
+  .md pre code{background:none;border:0;padding:0;color:var(--txt)}
+  .md a{color:var(--azul)}
+  .md hr{border:0;border-top:1px solid var(--linha);margin:10px 0}
   .quem{font-size:11px;color:var(--roxo);margin-bottom:4px;text-transform:uppercase;letter-spacing:.6px}
   .sistema{align-self:center;font-size:12px;color:var(--fraco);font-style:italic}
   #barra{display:flex;gap:9px;padding:14px;border-top:1px solid var(--linha)}
@@ -99,11 +116,87 @@ let S = null, pendente = null;
 const $ = s => document.querySelector(s);
 const msgs = $('#msgs');
 
-function bolha(txt, classe, quem){
+// ---------------------------------------------------------------------------
+// Markdown -> HTML
+//
+// O LLM SEMPRE responde em Markdown ("**R$ 8.420,75**", listas, `código`).
+// Sem converter, o usuário lê os asteriscos na tela. Este é um conversor
+// mínimo, sem biblioteca externa — o projeto roda offline.
+//
+// Segurança: escapaHtml() roda ANTES de qualquer coisa, então nada do que o
+// LLM escrever vira tag de verdade. Só as tags que ESTE código gera sobrevivem,
+// e o href de link só aceita http(s).
+// ---------------------------------------------------------------------------
+function escapaHtml(s){
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+// Marcadores usados para "esconder" codigo enquanto o resto e formatado.
+// Sao caracteres de controle: nunca aparecem numa resposta de verdade, entao
+// nao ha risco de colidir com um numero ou palavra do texto.
+const M_BLOCO = "\u0000", M_CODIGO = "\u0001";
+
+function trechoInline(s){
+  // `codigo` sai de cena primeiro, senao um ** dentro dele viraria negrito
+  const codigos = [];
+  s = s.replace(/`([^`]+)`/g,
+                (_, c) => M_CODIGO + (codigos.push(c) - 1) + M_CODIGO);
+  // O miolo nao pode comecar nem terminar com espaco — senao "a * b * c"
+  // (multiplicacao) viraria italico. E a mesma regra do Markdown de verdade.
+  const MIOLO = '([^\\s*][^*]*?[^\\s*]|[^\\s*])';
+  s = s
+    .replace(new RegExp('\\*\\*' + MIOLO + '\\*\\*', 'g'), '<strong>$1</strong>')
+    .replace(new RegExp('__' + MIOLO + '__', 'g'), '<strong>$1</strong>')
+    .replace(new RegExp('(^|[\\s(])\\*' + MIOLO + '\\*', 'g'), '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+             '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s.replace(/\u0001(\d+)\u0001/g, (_, i) => `<code>${codigos[i]}</code>`);
+}
+
+function markdown(txt){
+  // blocos ``` saem inteiros de cena antes de tudo, cada um na sua propria linha
+  const blocos = [];
+  let t = txt.replace(/```[a-z]*\n?([\s\S]*?)```/gi,
+    (_, cod) => "\n" + M_BLOCO + (blocos.push(cod.replace(/\n$/, '')) - 1) + M_BLOCO + "\n");
+  t = escapaHtml(t);
+
+  const saida = [];
+  let lista = null;                                    // 'ul', 'ol' ou nada
+  const fecharLista = () => { if (lista){ saida.push(`</${lista}>`); lista = null; } };
+  const abrirLista = tipo => { if (lista !== tipo){ fecharLista(); saida.push(`<${tipo}>`); lista = tipo; } };
+
+  for (const linha of t.split('\n')){
+    const bloco   = linha.match(/^\u0000(\d+)\u0000$/);
+    const titulo  = linha.match(/^#{1,6}\s+(.*)$/);
+    const marcada = linha.match(/^\s*[-*+]\s+(.*)$/);
+    const numerada= linha.match(/^\s*\d+[.)]\s+(.*)$/);
+
+    if (bloco)          { fecharLista(); saida.push(`<pre><code>${escapaHtml(blocos[bloco[1]])}</code></pre>`); }
+    else if (titulo)    { fecharLista(); saida.push(`<h4>${trechoInline(titulo[1])}</h4>`); }
+    else if (/^\s*(?:-\s*){3,}$|^\s*(?:\*\s*){3,}$|^\s*(?:_\s*){3,}$/.test(linha))
+                        { fecharLista(); saida.push('<hr>'); }
+    else if (marcada)   { abrirLista('ul'); saida.push(`<li>${trechoInline(marcada[1])}</li>`); }
+    else if (numerada)  { abrirLista('ol'); saida.push(`<li>${trechoInline(numerada[1])}</li>`); }
+    else if (linha.trim()){ fecharLista(); saida.push(`<p>${trechoInline(linha)}</p>`); }
+    else fecharLista();
+  }
+  fecharLista();
+  return saida.join('');
+}
+
+// md=true converte Markdown; md=false trata como texto puro (o que VOCÊ digitou)
+function bolha(txt, classe, quem, md){
   const d = document.createElement('div');
   d.className = 'm ' + classe;
   if (quem) d.innerHTML = `<div class="quem">${quem}</div>`;
-  d.appendChild(document.createTextNode(txt));
+  if (md){
+    const corpo = document.createElement('div');
+    corpo.className = 'md';
+    corpo.innerHTML = markdown(txt);
+    d.appendChild(corpo);
+  } else {
+    d.appendChild(document.createTextNode(txt));
+  }
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
   return d;
@@ -159,7 +252,7 @@ async function chamar(url, body){
     const r = await (await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(body)})).json();
     carregando.remove();
-    if (r.texto) bolha(r.texto, 'bot', r.agente_final || 'agente');
+    if (r.texto) bolha(r.texto, 'bot', r.agente_final || 'agente', true);
     pintarTrilha(r.trilha || []);
     $('#state').textContent = JSON.stringify(r.state || {}, null, 2);
     if (r.confirmacao_pendente) mostrarConfirma(r.confirmacao_pendente);
@@ -187,6 +280,9 @@ function mostrarConfirma(p){
   $('#cOp').textContent = 'confirmação necessária · ' + p.tool;
   $('#cTexto').textContent = p.hint;
   $('#confirma').style.display = 'block';
+  // a caixa acabou de roubar altura do chat: rola de novo, senão ela
+  // cobre justamente a mensagem que explica o que está sendo confirmado
+  msgs.scrollTop = msgs.scrollHeight;
 }
 function esconderConfirma(){ pendente = null; $('#confirma').style.display = 'none'; }
 
